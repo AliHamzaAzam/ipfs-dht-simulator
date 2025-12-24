@@ -218,24 +218,24 @@ Machine* RingDHT::findMachine(int id) {
 Machine* RingDHT::findSuccessor(int id) {
     if (head == nullptr) return nullptr;
     
+    // Find the smallest machine with ID >= target
+    // If no such machine exists, wrap around to the smallest ID machine (head)
+    
+    Machine* candidate = nullptr;
     Machine* current = head;
-    Machine* candidate = head;  // Default to first machine
     
     do {
         if (current->getId() >= id) {
-            // Found a machine with ID >= target
-            if (candidate == head || current->getId() < candidate->getId() || 
-                candidate->getId() < id) {
+            // This machine qualifies (ID >= target)
+            if (candidate == nullptr || current->getId() < candidate->getId()) {
                 candidate = current;
             }
         }
         current = current->getNext();
     } while (current != head);
     
-    // If no machine found with ID >= target, wrap around
-    // The successor is the smallest ID machine
-    if (candidate->getId() < id) {
-        // All machines have smaller IDs, return the smallest
+    // If no machine found with ID >= target, wrap around to smallest (head)
+    if (candidate == nullptr) {
         return head;
     }
     
