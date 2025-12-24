@@ -2,6 +2,8 @@
 
 A Ring-based Distributed Hash Table simulator implementing content-addressable file storage with O(log N) routing using finger tables.
 
+> Originally developed in 2023 as a Data Structures course project. Rebuilt and modernized for GitHub publication.
+
 ## Features
 
 - Circular ring topology for machine organization
@@ -29,14 +31,16 @@ make
 | Command | Description |
 |---------|-------------|
 | `INIT <machines> <bits>` | Initialize DHT with N machines and B-bit space |
+| `ASSIGN <name> <id>` | Manually assign ID to a new machine |
 | `INSERT <file_path> <machine_id>` | Insert file starting from machine |
 | `SEARCH <key> <machine_id>` | Search for file by hash key |
-| `DELETE <key> <machine_id>` | Delete file by hash key |
-| `ADD_MACHINE <name> [id]` | Add new machine to ring |
+| `DELETE <key> <machine_id>` | Delete file by hash key (prints updated B-tree) |
+| `ADD_MACHINE <name> [id]` | Add new machine to ring (auto-assigns ID if omitted) |
 | `REMOVE_MACHINE <id>` | Remove machine from ring |
-| `PRINT_RT <machine_id>` | Print routing table |
+| `PRINT_RT <machine_id>` | Print routing table (finger table) |
 | `PRINT_BTREE <machine_id>` | Print B-tree contents |
-| `STATUS` | Show all machines |
+| `STATUS` | Show all machines and ID ranges |
+| `RING` | Visualize the ring topology |
 | `EXIT` | Quit simulator |
 
 ## Example
@@ -60,4 +64,4 @@ Path: 1 → 4 → 9 (found: data/sample.txt)
 
 ## License
 
-MIT
+[MIT License](LICENSE)
