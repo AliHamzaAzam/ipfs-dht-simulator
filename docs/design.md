@@ -47,6 +47,11 @@ This simulator implements a Ring-based Distributed Hash Table (DHT) inspired by 
 - **Order**: 5 (min 2, max 4 keys per node)
 - **Key**: File hash, **Value**: File path
 
+### 4. BigInt (160-bit Support)
+- **Purpose**: Support identifier spaces up to 160 bits
+- **Implementation**: Array of 3 × 64-bit words (192 bits total)
+- **Operations**: Addition, subtraction, comparison, power of 2
+
 ## Key Algorithms
 
 ### Finger Table Initialization

@@ -10,7 +10,7 @@ A Ring-based Distributed Hash Table simulator implementing content-addressable f
 - Finger tables for efficient O(log N) routing
 - B-tree local file indexing per machine
 - Dynamic machine join/leave with automatic file redistribution
-- Configurable identifier space (4-bit to 160-bit)
+- Configurable identifier space (2-bit to 160-bit) using custom BigInt implementation
 
 ## Building
 
@@ -58,9 +58,10 @@ Path: 1 → 4 → 9 (found: data/sample.txt)
 
 ## Technical Details
 
-- **Routing**: Uses Chord-style finger tables where entry i points to succ(p + 2^(i-1))
-- **Hashing**: Polynomial rolling hash for file content identification
+- **Routing**: Chord-style finger tables where entry i points to succ(p + 2^(i-1))
+- **Hashing**: Polynomial rolling hash with std::hash extension for large spaces
 - **Storage**: B-tree (order 5) for local key-value indexing
+- **BigInt**: Custom 192-bit integer class for 160-bit identifier space support
 
 ## License
 
