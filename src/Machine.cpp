@@ -2,10 +2,10 @@
 #include "RingDHT.h"
 #include <iostream>
 
-Machine::Machine(int id, const std::string& name, int bits)
+Machine::Machine(const BigInt& id, const std::string& name, int bits)
     : id(id), name(name), next(nullptr), identifierBits(bits) {
     routingTable = new RoutingTable(id, bits);
-    btree = new BTree(5);  // Order 5 B-tree
+    btree = new BTree(5);
 }
 
 Machine::~Machine() {
@@ -16,12 +16,9 @@ Machine::~Machine() {
 void Machine::initializeRoutingTable(RingDHT* dht) {
     routingTable->clear();
     
-    int identifierSpace = 1 << identifierBits;  // 2^bits
-    
-    // Create finger table entries
-    // Entry i points to succ(id + 2^(i-1)) for i = 1 to identifierBits
     for (int i = 1; i <= identifierBits; i++) {
-        int start = (id + (1 << (i - 1))) % identifierSpace;
+        BigInt offset = BigInt::powerOf2(i - 1, identifierBits);
+        BigInt start = id + offset;
         Machine* successor = dht->findSuccessor(start);
         
         if (successor != nullptr) {
@@ -31,28 +28,27 @@ void Machine::initializeRoutingTable(RingDHT* dht) {
 }
 
 void Machine::updateRoutingTable(RingDHT* dht) {
-    // Simply rebuild the routing table
     initializeRoutingTable(dht);
 }
 
-void Machine::insertLocal(int key, const std::string& value) {
+void Machine::insertLocal(const BigInt& key, const std::string& value) {
     btree->insert(key, value);
 }
 
-std::string Machine::searchLocal(int key) {
+std::string Machine::searchLocal(const BigInt& key) {
     return btree->search(key);
 }
 
-bool Machine::deleteLocal(int key) {
+bool Machine::deleteLocal(const BigInt& key) {
     return btree->remove(key);
 }
 
-std::vector<std::pair<int, std::string>> Machine::getAllFiles() {
+std::vector<std::pair<BigInt, std::string>> Machine::getAllFiles() {
     return btree->getAllEntries();
 }
 
 void Machine::print() {
-    std::cout << "Machine " << id << " (" << name << ")";
+    std::cout << "Machine " << id.toString() << " (" << name << ")";
 }
 
 void Machine::printRoutingTable() {
@@ -60,6 +56,6 @@ void Machine::printRoutingTable() {
 }
 
 void Machine::printBTree() {
-    std::cout << "B-Tree for Machine " << id << ":" << std::endl;
+    std::cout << "B-Tree for Machine " << id.toString() << ":" << std::endl;
     btree->print();
 }

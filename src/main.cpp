@@ -8,7 +8,7 @@
 void printHelp() {
     std::cout << "\n=== IPFS DHT Simulator Commands ===" << std::endl;
     std::cout << "  INIT <num_machines> <identifier_bits>" << std::endl;
-    std::cout << "      Initialize DHT with N machines and B-bit identifier space" << std::endl;
+    std::cout << "      Initialize DHT (bits: 2-160)" << std::endl;
     std::cout << "  ASSIGN <machine_name> <id>" << std::endl;
     std::cout << "      Manually assign ID to a new machine" << std::endl;
     std::cout << "  INSERT <file_path> <start_machine_id>" << std::endl;
@@ -26,7 +26,7 @@ void printHelp() {
     std::cout << "  PRINT_BTREE <machine_id>" << std::endl;
     std::cout << "      Print B-tree of specified machine" << std::endl;
     std::cout << "  STATUS" << std::endl;
-    std::cout << "      Show all machines and their ID ranges" << std::endl;
+    std::cout << "      Show all machines" << std::endl;
     std::cout << "  RING" << std::endl;
     std::cout << "      Visualize the ring topology" << std::endl;
     std::cout << "  HASH <string>" << std::endl;
@@ -48,7 +48,7 @@ std::string toUpper(const std::string& str) {
 
 int main() {
     std::cout << "╔═══════════════════════════════════════════╗" << std::endl;
-    std::cout << "║     IPFS DHT Simulator (Ring-based)       ║" << std::endl;
+    std::cout << "║  IPFS DHT Simulator (160-bit supported)   ║" << std::endl;
     std::cout << "║     Type 'HELP' for available commands    ║" << std::endl;
     std::cout << "╚═══════════════════════════════════════════╝" << std::endl;
     
@@ -61,7 +61,6 @@ int main() {
             break;
         }
         
-        // Skip empty lines
         if (line.empty()) continue;
         
         std::istringstream iss(line);
@@ -84,13 +83,8 @@ int main() {
                 continue;
             }
             
-            if (bits < 2 || bits > 20) {
-                std::cout << "Error: identifier_bits must be between 2 and 20" << std::endl;
-                continue;
-            }
-            
-            if (numMachines < 1 || numMachines > (1 << bits)) {
-                std::cout << "Error: num_machines must be between 1 and " << (1 << bits) << std::endl;
+            if (bits < 2 || bits > 160) {
+                std::cout << "Error: identifier_bits must be between 2 and 160" << std::endl;
                 continue;
             }
             
@@ -125,7 +119,7 @@ int main() {
                 continue;
             }
             
-            dht->insertFile(filepath, startId);
+            dht->insertFile(filepath, BigInt(static_cast<uint64_t>(startId), dht->getIdentifierBits()));
         }
         else if (command == "SEARCH") {
             if (dht == nullptr) {
@@ -139,7 +133,8 @@ int main() {
                 continue;
             }
             
-            dht->searchFile(key, startId);
+            dht->searchFile(BigInt(static_cast<uint64_t>(key), dht->getIdentifierBits()), 
+                           BigInt(static_cast<uint64_t>(startId), dht->getIdentifierBits()));
         }
         else if (command == "DELETE") {
             if (dht == nullptr) {
@@ -153,7 +148,8 @@ int main() {
                 continue;
             }
             
-            dht->deleteFile(key, startId);
+            dht->deleteFile(BigInt(static_cast<uint64_t>(key), dht->getIdentifierBits()),
+                           BigInt(static_cast<uint64_t>(startId), dht->getIdentifierBits()));
         }
         else if (command == "PRINT_RT") {
             if (dht == nullptr) {
@@ -167,7 +163,7 @@ int main() {
                 continue;
             }
             
-            dht->printRoutingTable(machineId);
+            dht->printRoutingTable(BigInt(static_cast<uint64_t>(machineId), dht->getIdentifierBits()));
         }
         else if (command == "PRINT_BTREE") {
             if (dht == nullptr) {
@@ -181,7 +177,7 @@ int main() {
                 continue;
             }
             
-            dht->printBTree(machineId);
+            dht->printBTree(BigInt(static_cast<uint64_t>(machineId), dht->getIdentifierBits()));
         }
         else if (command == "ADD_MACHINE") {
             if (dht == nullptr) {
@@ -195,7 +191,7 @@ int main() {
                 std::cout << "Usage: ADD_MACHINE <machine_name> [id]" << std::endl;
                 continue;
             }
-            iss >> id;  // Optional ID
+            iss >> id;
             
             if (dht->insertMachine(name, id)) {
                 dht->updateAllRoutingTables();
@@ -230,7 +226,7 @@ int main() {
                 continue;
             }
             
-            dht->removeMachine(machineId);
+            dht->removeMachine(BigInt(static_cast<uint64_t>(machineId), dht->getIdentifierBits()));
         }
         else if (command == "HASH") {
             if (dht == nullptr) {
@@ -244,8 +240,8 @@ int main() {
                 continue;
             }
             
-            int hash = dht->calculateHash(input);
-            std::cout << "Hash of \"" << input << "\": " << hash << std::endl;
+            BigInt hash = dht->calculateHash(input);
+            std::cout << "Hash of \"" << input << "\": " << hash.toString() << std::endl;
         }
         else if (command == "VERBOSE") {
             if (dht == nullptr) {
@@ -264,7 +260,6 @@ int main() {
                     std::cout << "Verbose mode: OFF" << std::endl;
                 }
             } else {
-                // Toggle
                 dht->setVerbose(!dht->isVerbose());
                 std::cout << "Verbose mode: " << (dht->isVerbose() ? "ON" : "OFF") << std::endl;
             }

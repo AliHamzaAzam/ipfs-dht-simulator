@@ -13,6 +13,7 @@ add_executable(ipfs_dht
     src/RoutingTable.cpp
     src/BTree.cpp
     src/HashFunction.cpp
+    src/BigInt.cpp
 )
 
 target_include_directories(ipfs_dht PRIVATE src)

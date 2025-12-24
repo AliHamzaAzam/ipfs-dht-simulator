@@ -2,6 +2,7 @@
 #define ROUTING_TABLE_H
 
 #include <iostream>
+#include "BigInt.h"
 
 // Forward declaration
 class Machine;
@@ -9,13 +10,13 @@ class Machine;
 // Routing table entry (finger table entry)
 struct RoutingEntry {
     int index;           // i (1-indexed)
-    int startId;         // p + 2^(i-1) mod 2^m
-    int targetId;        // succ(startId)
+    BigInt startId;      // p + 2^(i-1) mod 2^m
+    BigInt targetId;     // succ(startId)
     Machine* machinePtr; // Pointer to target machine
     RoutingEntry* prev;
     RoutingEntry* next;
     
-    RoutingEntry(int idx, int start, int target, Machine* ptr)
+    RoutingEntry(int idx, const BigInt& start, const BigInt& target, Machine* ptr)
         : index(idx), startId(start), targetId(target), machinePtr(ptr),
           prev(nullptr), next(nullptr) {}
 };
@@ -26,22 +27,20 @@ private:
     RoutingEntry* head;
     RoutingEntry* tail;
     int size;
-    int ownerMachineId;
-    int identifierBits;
+    BigInt ownerMachineId;
 
 public:
-    RoutingTable(int machineId, int bits);
+    RoutingTable(const BigInt& machineId, int bits);
     ~RoutingTable();
     
     // Add entry to the table
-    void addEntry(int index, int startId, int targetId, Machine* ptr);
+    void addEntry(int index, const BigInt& startId, const BigInt& targetId, Machine* ptr);
     
     // Clear all entries (for rebuilding)
     void clear();
     
     // Get next hop for routing to a key
-    // Returns the machine pointer for the best next hop
-    Machine* getNextHop(int key, int identifierSpace);
+    Machine* getNextHop(const BigInt& key);
     
     // Get entry at index (1-indexed)
     RoutingEntry* getEntry(int index);

@@ -2,15 +2,17 @@
 #include "Machine.h"
 #include <iomanip>
 
-RoutingTable::RoutingTable(int machineId, int bits)
+RoutingTable::RoutingTable(const BigInt& machineId, int bits)
     : head(nullptr), tail(nullptr), size(0), 
-      ownerMachineId(machineId), identifierBits(bits) {}
+      ownerMachineId(machineId) {
+    (void)bits;  // Unused parameter
+}
 
 RoutingTable::~RoutingTable() {
     clear();
 }
 
-void RoutingTable::addEntry(int index, int startId, int targetId, Machine* ptr) {
+void RoutingTable::addEntry(int index, const BigInt& startId, const BigInt& targetId, Machine* ptr) {
     RoutingEntry* entry = new RoutingEntry(index, startId, targetId, ptr);
     
     if (head == nullptr) {
@@ -34,17 +36,16 @@ void RoutingTable::clear() {
     size = 0;
 }
 
-Machine* RoutingTable::getNextHop(int key, int identifierSpace) {
+Machine* RoutingTable::getNextHop(const BigInt& key) {
     // Find the largest finger that precedes key
     // Traverse from tail (largest finger) to head (smallest)
     
     RoutingEntry* current = tail;
     
     while (current != nullptr) {
-        int fingerId = current->targetId;
+        BigInt fingerId = current->targetId;
         
         // Check if finger is between owner and key (in circular space)
-        // finger is in (owner, key) means it's a valid predecessor
         bool fingerInRange;
         
         if (ownerMachineId < key) {
@@ -54,7 +55,6 @@ Machine* RoutingTable::getNextHop(int key, int identifierSpace) {
             // Wrap around case: key is after 0
             fingerInRange = (fingerId > ownerMachineId || fingerId <= key);
         } else {
-            // owner == key, shouldn't happen in search
             fingerInRange = false;
         }
         
@@ -85,17 +85,17 @@ RoutingEntry* RoutingTable::getEntry(int index) {
 }
 
 void RoutingTable::print() {
-    std::cout << "Routing Table for Machine " << ownerMachineId << ":" << std::endl;
+    std::cout << "Routing Table for Machine " << ownerMachineId.toString() << ":" << std::endl;
     std::cout << "  " << std::setw(5) << "i" 
-              << std::setw(12) << "start" 
-              << std::setw(12) << "succ" << std::endl;
-    std::cout << "  " << std::string(29, '-') << std::endl;
+              << std::setw(20) << "start" 
+              << std::setw(20) << "succ" << std::endl;
+    std::cout << "  " << std::string(45, '-') << std::endl;
     
     RoutingEntry* current = head;
     while (current != nullptr) {
         std::cout << "  " << std::setw(5) << current->index
-                  << std::setw(12) << current->startId
-                  << std::setw(12) << current->targetId << std::endl;
+                  << std::setw(20) << current->startId.toString()
+                  << std::setw(20) << current->targetId.toString() << std::endl;
         current = current->next;
     }
 }
