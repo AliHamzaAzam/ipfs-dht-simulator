@@ -1,0 +1,2 @@
+Another test file with different content.
+This will produce a different hash value.
