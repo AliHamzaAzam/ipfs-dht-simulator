@@ -398,6 +398,9 @@ bool RingDHT::deleteFile(int key, int startMachineId) {
         return false;
     }
     
+    // First search for the value to display it
+    std::string value = destination->searchLocal(key);
+    
     // Delete from destination's B-tree
     bool result = destination->deleteLocal(key);
     
@@ -410,9 +413,12 @@ bool RingDHT::deleteFile(int key, int startMachineId) {
         }
         
         if (result) {
-            std::cout << " (deleted from machine " << destination->getId() << ")" << std::endl;
+            std::cout << " (key " << key << " deleted from machine " << destination->getId() << ")" << std::endl;
+            std::cout << "Removed value: " << value << std::endl;
+            std::cout << "\nUpdated B-Tree for Machine " << destination->getId() << ":" << std::endl;
+            destination->getBTree()->print();
         } else {
-            std::cout << " (key not found)" << std::endl;
+            std::cout << " (key " << key << " not found)" << std::endl;
         }
     }
     
