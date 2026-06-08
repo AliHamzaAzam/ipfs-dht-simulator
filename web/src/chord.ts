@@ -30,8 +30,6 @@ export interface ChordNode {
   id: number;
   name: string;
   fingers: FingerEntry[];
-  /** B-tree file storage for this node. */
-  store: BTree;
 }
 
 export interface RouteResult {
@@ -47,7 +45,12 @@ export interface FileRouteResult extends RouteResult {
 }
 
 export interface SearchResult extends FileRouteResult {
-  /** The file name stored at the destination, or null if not found. */
+  /** The value at the destination (the `name` passed to insertFile), or null if not found. */
+  value: string | null;
+}
+
+/** Result of deleteFile: `value` is what was stored before deletion (null if the key was absent). */
+export interface DeleteResult extends FileRouteResult {
   value: string | null;
 }
 
@@ -192,14 +195,14 @@ export class ChordRing {
   }
 
   // -------------------------------------------------------------------------
-  // nodes() — sorted snapshot of the ring, including each node's B-tree store
+  // nodes() — sorted snapshot of the ring. B-tree contents are read via
+  // filesAt(id) / btreeAt(id) so the live engine-owned tree is never leaked.
   // -------------------------------------------------------------------------
   nodes(): ChordNode[] {
     return this._nodes.map((n, idx) => ({
       id: n.id,
       name: n.name,
       fingers: [...(this._fingers[idx] ?? [])],
-      store: this._stores.get(n.id) ?? new BTree(5),
     }));
   }
 
@@ -211,7 +214,9 @@ export class ChordRing {
   }
 
   // -------------------------------------------------------------------------
-  // btreeAt(id) — direct reference to a node's BTree (for the inspector)
+  // btreeAt(id) — the node's BTree, for read-only inspection (e.g. toJSON()).
+  // This is the engine-owned live tree: do NOT mutate it directly — go through
+  // insertFile/deleteFile so routing stays consistent.
   // -------------------------------------------------------------------------
   btreeAt(id: number): BTree | undefined {
     return this._stores.get(id);
@@ -241,7 +246,8 @@ export class ChordRing {
   searchFile(key: number, startId: number): SearchResult {
     const { path, destination } = this.route(key, startId);
     const store = this._stores.get(destination);
-    const value = store?.search(key) ?? null;
+    if (!store) throw new Error(`Node ${destination} has no B-tree store`);
+    const value = store.search(key);
     return { key, path, destination, value };
   }
 
@@ -249,11 +255,12 @@ export class ChordRing {
   // deleteFile(key, startId)
   // Mirrors C++ DELETE <key> <startId>.
   // -------------------------------------------------------------------------
-  deleteFile(key: number, startId: number): SearchResult {
+  deleteFile(key: number, startId: number): DeleteResult {
     const { path, destination } = this.route(key, startId);
     const store = this._stores.get(destination);
-    const value = store?.search(key) ?? null;
-    if (store) store.remove(key);
+    if (!store) throw new Error(`Node ${destination} has no B-tree store`);
+    const value = store.search(key); // value before deletion (null if absent)
+    store.remove(key);
     return { key, path, destination, value };
   }
 

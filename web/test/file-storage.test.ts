@@ -81,11 +81,10 @@ describe("insertFile — routes and stores in destination B-tree", () => {
     expect(ring.filesAt(12)).toEqual([]);
   });
 
-  it("nodes() exposes each node's BTree via store field", () => {
+  it("btreeAt(id) exposes a node's BTree for inspection", () => {
     ring.insertFile("a", 0);
-    const n3 = ring.nodes().find((n) => n.id === 3)!;
-    expect(n3.store).toBeDefined();
-    expect(n3.store.search(1)).toBe("a");
+    expect(ring.btreeAt(3)).toBeDefined();
+    expect(ring.btreeAt(3)!.search(1)).toBe("a");
   });
 });
 
