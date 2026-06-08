@@ -4,12 +4,14 @@
  * Source of truth: src/RingDHT.cpp, src/Machine.cpp, src/RoutingTable.cpp
  * No DOM dependencies; no Node.js globals.
  *
- * Design note: each ChordNode carries an optional `store` field (initially
- * undefined) so a B-tree/file-storage layer can be attached per-node in the
- * next task without restructuring this file.
+ * Each node carries a BTree for file storage.  File operations route by key
+ * (hash of the file name) exactly as the C++ insertFile/searchFile/deleteFile
+ * do.  removeMachine redistributes the removed node's B-tree entries to its
+ * ring-next successor before unlinking (mirrors C++ removeMachine).
  */
 
 import { hash } from "./hash.js";
+import { BTree } from "./btree.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -28,8 +30,8 @@ export interface ChordNode {
   id: number;
   name: string;
   fingers: FingerEntry[];
-  /** Reserved for the B-tree storage layer (Task 57). Not populated here. */
-  store?: unknown;
+  /** B-tree file storage for this node. */
+  store: BTree;
 }
 
 export interface RouteResult {
@@ -37,6 +39,16 @@ export interface RouteResult {
   path: number[];
   /** ID of the node that is the key's successor (i.e. the responsible node). */
   destination: number;
+}
+
+export interface FileRouteResult extends RouteResult {
+  /** DHT key used (hash of the file name mod 2^bits). */
+  key: number;
+}
+
+export interface SearchResult extends FileRouteResult {
+  /** The file name stored at the destination, or null if not found. */
+  value: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +62,8 @@ export class ChordRing {
   private _nodes: Array<{ id: number; name: string }> = [];
   /** Finger tables, indexed by node position in _nodes (kept in sync). */
   private _fingers: FingerEntry[][] = [];
+  /** Per-node B-tree stores, keyed by node id. */
+  private _stores: Map<number, BTree> = new Map();
 
   constructor(bits: number) {
     this._bits = bits;
@@ -70,11 +84,13 @@ export class ChordRing {
     }
     this._nodes = [];
     this._fingers = [];
+    this._stores = new Map();
     const spacing = Math.floor(this._modValue / n);
     for (let i = 0; i < n; i++) {
       const id = i * spacing;
       const name = `Machine_${id}`;
       this._nodes.push({ id, name });
+      this._stores.set(id, new BTree(5));
     }
     // _nodes are already sorted (ids = 0, spacing, 2*spacing, …)
     this.rebuildFingerTables();
@@ -96,16 +112,35 @@ export class ChordRing {
     let pos = this._nodes.findIndex((n) => n.id > nodeId);
     if (pos === -1) pos = this._nodes.length;
     this._nodes.splice(pos, 0, { id: nodeId, name });
+    // New nodes start with an empty B-tree (C++ does not re-key files on join)
+    this._stores.set(nodeId, new BTree(5));
     this.rebuildFingerTables();
     return true;
   }
 
   // -------------------------------------------------------------------------
-  // removeNode — remove by id, rebuild tables
+  // removeNode — redistribute B-tree entries to ring-next successor, then remove.
+  // Mirrors C++ removeMachine: successor = toRemove->getNext() (ring-next, not
+  // findSuccessor(id+1)).  Files are re-inserted into the successor's B-tree
+  // before the node is unlinked.  Finger tables are rebuilt after removal.
   // -------------------------------------------------------------------------
   removeNode(id: number): boolean {
     const idx = this._nodes.findIndex((n) => n.id === id);
     if (idx === -1) return false;
+
+    // Redistribute before unlinking (mirrors C++ removeMachine)
+    if (this._nodes.length > 1) {
+      const successorId = this._nodes[(idx + 1) % this._nodes.length]!.id;
+      const removedStore = this._stores.get(id);
+      const successorStore = this._stores.get(successorId);
+      if (removedStore && successorStore) {
+        for (const { key, value } of removedStore.getAllEntries()) {
+          successorStore.insert(key, value);
+        }
+      }
+    }
+
+    this._stores.delete(id);
     this._nodes.splice(idx, 1);
     if (this._nodes.length > 0) {
       this.rebuildFingerTables();
@@ -157,14 +192,69 @@ export class ChordRing {
   }
 
   // -------------------------------------------------------------------------
-  // nodes() — sorted snapshot of the ring
+  // nodes() — sorted snapshot of the ring, including each node's B-tree store
   // -------------------------------------------------------------------------
   nodes(): ChordNode[] {
     return this._nodes.map((n, idx) => ({
       id: n.id,
       name: n.name,
       fingers: [...(this._fingers[idx] ?? [])],
+      store: this._stores.get(n.id) ?? new BTree(5),
     }));
+  }
+
+  // -------------------------------------------------------------------------
+  // filesAt(id) — sorted key/value entries stored at the given node's B-tree
+  // -------------------------------------------------------------------------
+  filesAt(id: number): Array<{ key: number; value: string }> {
+    return this._stores.get(id)?.getAllEntries() ?? [];
+  }
+
+  // -------------------------------------------------------------------------
+  // btreeAt(id) — direct reference to a node's BTree (for the inspector)
+  // -------------------------------------------------------------------------
+  btreeAt(id: number): BTree | undefined {
+    return this._stores.get(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // insertFile(name, startId)
+  // key = hash(name, bits) (already mod 2^bits)
+  // Route key from startId, insert (key, name) into destination's B-tree.
+  // Returns routing info + key so the viz can animate the insert.
+  // Mirrors C++ insertFile (filepath fallback → hash the name string).
+  // -------------------------------------------------------------------------
+  insertFile(name: string, startId: number): FileRouteResult {
+    const key = hash(name, this._bits);
+    const { path, destination } = this.route(key, startId);
+    const store = this._stores.get(destination);
+    if (!store) throw new Error(`Node ${destination} has no B-tree store`);
+    store.insert(key, name);
+    return { key, path, destination };
+  }
+
+  // -------------------------------------------------------------------------
+  // searchFile(keyOrName, startId)
+  // Accepts a numeric key directly (mirrors C++ SEARCH <key> <startId>).
+  // Routes to destination, returns value + routing info.
+  // -------------------------------------------------------------------------
+  searchFile(key: number, startId: number): SearchResult {
+    const { path, destination } = this.route(key, startId);
+    const store = this._stores.get(destination);
+    const value = store?.search(key) ?? null;
+    return { key, path, destination, value };
+  }
+
+  // -------------------------------------------------------------------------
+  // deleteFile(key, startId)
+  // Mirrors C++ DELETE <key> <startId>.
+  // -------------------------------------------------------------------------
+  deleteFile(key: number, startId: number): SearchResult {
+    const { path, destination } = this.route(key, startId);
+    const store = this._stores.get(destination);
+    const value = store?.search(key) ?? null;
+    if (store) store.remove(key);
+    return { key, path, destination, value };
   }
 
   // -------------------------------------------------------------------------
