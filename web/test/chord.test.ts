@@ -291,4 +291,18 @@ describe("addNode() and removeNode()", () => {
     // findSuccessor(1) should now find 6 (not 3)
     expect(ring.findSuccessor(1)).toBe(6);
   });
+
+  it("addNode rejects an explicit id outside [0, 2^bits)", () => {
+    const ring = new ChordRing(4); // ids 0..15
+    ring.initialize(3);
+    expect(ring.addNode("Neg", -1)).toBe(false);
+    expect(ring.addNode("Big", 16)).toBe(false);
+    expect(ring.nodes().every((n) => n.id >= 0 && n.id < 16)).toBe(true);
+  });
+
+  it("initialize throws when n is out of [1, 2^bits]", () => {
+    const ring = new ChordRing(4); // 16 ids
+    expect(() => ring.initialize(20)).toThrow(RangeError);
+    expect(() => ring.initialize(0)).toThrow(RangeError);
+  });
 });

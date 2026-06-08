@@ -40,16 +40,6 @@ export interface RouteResult {
 }
 
 // ---------------------------------------------------------------------------
-// Internal ring node (linked-list cell)
-// ---------------------------------------------------------------------------
-
-interface RingCell {
-  id: number;
-  name: number; // index into a parallel names array (avoided string duplication)
-  next: RingCell | null; // circular; null only while not yet linked
-}
-
-// ---------------------------------------------------------------------------
 // ChordRing
 // ---------------------------------------------------------------------------
 
@@ -63,7 +53,7 @@ export class ChordRing {
 
   constructor(bits: number) {
     this._bits = bits;
-    this._modValue = 1 << bits; // Works for bits ≤ 30; mirrors C++ 1ULL<<bits for our range
+    this._modValue = 1 << bits; // valid for bits ≤ 30 (JS bitwise ops are 32-bit signed); mirrors C++ 1ULL<<bits for our 3–8-bit range
   }
 
   get bits(): number {
@@ -75,6 +65,9 @@ export class ChordRing {
   // Mirrors RingDHT::initialize: spacing = floor(2^bits / n), id = i*spacing
   // -------------------------------------------------------------------------
   initialize(n: number): void {
+    if (n <= 0 || n > this._modValue) {
+      throw new RangeError(`n must be in [1, ${this._modValue}]`);
+    }
     this._nodes = [];
     this._fingers = [];
     const spacing = Math.floor(this._modValue / n);
@@ -92,7 +85,10 @@ export class ChordRing {
   // Mirrors RingDHT::insertMachine; rebuilds all finger tables after insert.
   // -------------------------------------------------------------------------
   addNode(name: string, id?: number): boolean {
-    const nodeId = id !== undefined ? id % this._modValue : hash(name, this._bits);
+    if (id !== undefined && (id < 0 || id >= this._modValue)) {
+      return false; // explicit id outside [0, 2^bits)
+    }
+    const nodeId = id !== undefined ? id : hash(name, this._bits);
     if (this._nodes.some((n) => n.id === nodeId)) {
       return false; // duplicate
     }
@@ -173,6 +169,9 @@ export class ChordRing {
 
   // -------------------------------------------------------------------------
   // route(key, startId) — Chord greedy routing
+  //
+  // Precondition: key and startId are in [0, 2^bits). An out-of-range key wraps
+  // via findSuccessor (matching the C++), which may surprise callers.
   //
   // Mirrors RingDHT::routeToKey:
   //   1. path = [startId]
