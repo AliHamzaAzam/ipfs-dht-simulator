@@ -61,8 +61,8 @@ export interface DHTState {
 // ---------------------------------------------------------------------------
 
 type PendingMutation =
-  | { kind: "insert"; name: string; startId: number }
-  | { kind: "delete"; key: number; startId: number };
+  | { kind: "insert"; key: number; value: string; destination: number }
+  | { kind: "delete"; key: number; destination: number };
 
 // ---------------------------------------------------------------------------
 // DHTController
@@ -89,11 +89,11 @@ export class DHTController {
       nodes: this._ring.nodes().map((n) => ({
         id: n.id,
         name: n.name,
-        fingers: n.fingers,
-        files: this._ring.filesAt(n.id),
+        fingers: [...n.fingers],
+        files: [...this._ring.filesAt(n.id)],
       })),
       selectedId: this._selectedId,
-      animation: this._animation ? { ...this._animation } : null,
+      animation: this._animation ? { ...this._animation, path: [...this._animation.path] } : null,
     };
   }
 
@@ -142,11 +142,9 @@ export class DHTController {
     if (ok) {
       // Deselect if the removed node was selected
       if (this._selectedId === id) this._selectedId = null;
-      // Cancel any animation involving this node
-      if (
-        this._animation &&
-        (this._animation.startId === id || this._animation.destination === id)
-      ) {
+      // Cancel any animation that involves this node (start, destination, or
+      // any intermediate hop in the path).
+      if (this._animation && this._animation.path.includes(id)) {
         this._animation = null;
         this._pendingMutation = null;
       }
@@ -168,8 +166,14 @@ export class DHTController {
   /**
    * Start a pure route animation (no B-tree side-effect).
    * Computes the path and sets animation at step 0.
+   * If an animation with a pending mutation is already in flight, it is
+   * committed first (no silent data loss).
    */
   startRoute(key: number, startId: number): void {
+    // Commit any in-flight animation so we don't silently drop it
+    if (this._animation && !this._animation.done && this._pendingMutation) {
+      this.finishAnimation();
+    }
     const { path, destination } = this._ring.route(key, startId);
     this._animation = {
       kind: "route",
@@ -187,8 +191,14 @@ export class DHTController {
   /**
    * Start an insert animation.
    * The B-tree mutation is deferred until the animation reaches done.
+   * If an animation with a pending mutation is already in flight, it is
+   * committed first (no silent data loss).
    */
   startInsertFile(name: string, startId: number): void {
+    // Commit any in-flight animation so we don't silently drop it
+    if (this._animation && !this._animation.done && this._pendingMutation) {
+      this.finishAnimation();
+    }
     const key = hash(name, this._ring.bits);
     const { path, destination } = this._ring.route(key, startId);
     this._animation = {
@@ -201,7 +211,9 @@ export class DHTController {
       value: name,
       done: path.length === 1,
     };
-    this._pendingMutation = { kind: "insert", name, startId };
+    // Pin destination at start time so _commitMutation always inserts exactly
+    // where the animation showed, regardless of ring changes mid-animation.
+    this._pendingMutation = { kind: "insert", key, value: name, destination };
     // If the route is a single step (already at destination), commit now
     if (path.length === 1) {
       this._commitMutation();
@@ -212,8 +224,18 @@ export class DHTController {
   /**
    * Start a search animation.
    * Reads the destination's B-tree immediately (no state mutation).
+   * If an animation with a pending mutation is already in flight, it is
+   * committed first (no silent data loss).
+   *
+   * @param key    Pre-hashed numeric DHT key.  Use `hashName(name)` to derive
+   *               it from a file name string.
+   * @param startId  ID of the node that initiates the search.
    */
   startSearchFile(key: number, startId: number): void {
+    // Commit any in-flight animation so we don't silently drop it
+    if (this._animation && !this._animation.done && this._pendingMutation) {
+      this.finishAnimation();
+    }
     const { path, destination } = this._ring.route(key, startId);
     const files = this._ring.filesAt(destination);
     const entry = files.find((f) => f.key === key);
@@ -234,8 +256,18 @@ export class DHTController {
   /**
    * Start a delete animation.
    * The B-tree mutation is deferred until the animation reaches done.
+   * If an animation with a pending mutation is already in flight, it is
+   * committed first (no silent data loss).
+   *
+   * @param key    Pre-hashed numeric DHT key.  Use `hashName(name)` to derive
+   *               it from a file name string.
+   * @param startId  ID of the node that initiates the delete.
    */
   startDeleteFile(key: number, startId: number): void {
+    // Commit any in-flight animation so we don't silently drop it
+    if (this._animation && !this._animation.done && this._pendingMutation) {
+      this.finishAnimation();
+    }
     const { path, destination } = this._ring.route(key, startId);
     // Peek at the current value so the animation can show what was deleted
     const files = this._ring.filesAt(destination);
@@ -250,7 +282,9 @@ export class DHTController {
       value: entry?.value ?? null,
       done: path.length === 1,
     };
-    this._pendingMutation = { kind: "delete", key, startId };
+    // Pin destination at start time so _commitMutation always removes from
+    // exactly the node the animation showed, regardless of ring changes.
+    this._pendingMutation = { kind: "delete", key, destination };
     if (path.length === 1) {
       this._commitMutation();
     }
@@ -308,24 +342,27 @@ export class DHTController {
   // Private helpers
   // -------------------------------------------------------------------------
 
-  /** Commit the pending B-tree mutation (insert or delete) and clear it. */
+  /** Commit the pending B-tree mutation (insert or delete) directly to the
+   * pre-computed destination node (no re-routing), then clear it.
+   */
   private _commitMutation(): void {
     if (!this._pendingMutation) return;
     const mut = this._pendingMutation;
     this._pendingMutation = null;
     if (mut.kind === "insert") {
-      this._ring.insertFile(mut.name, mut.startId);
+      this._ring.insertAt(mut.destination, mut.key, mut.value);
     } else {
-      this._ring.deleteFile(mut.key, mut.startId);
+      this._ring.removeAt(mut.destination, mut.key);
     }
   }
 
-  /** Snapshot state and broadcast to all registered listeners. */
+  /** Snapshot state and broadcast to all registered listeners.
+   * Each listener receives an independent snapshot so mutations in one
+   * listener cannot corrupt the snapshot seen by subsequent listeners.
+   */
   private _notify(): void {
-    if (this._listeners.size === 0) return;
-    const state = this.getState();
     for (const listener of this._listeners) {
-      listener(state);
+      listener(this.getState());
     }
   }
 }

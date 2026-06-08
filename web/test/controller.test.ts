@@ -400,3 +400,150 @@ describe("hashName()", () => {
     expect(ctrl.hashName("hello")).toBe(hash("hello", 4));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fix 1 — getState() deep-copies path and nodes arrays (no reference leaks)
+// ---------------------------------------------------------------------------
+
+describe("getState() — snapshot isolation", () => {
+  it("mutating state.animation.path does not affect a subsequent getState()", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5); // ids 0,3,6,9,12
+    ctrl.startRoute(5, 0); // path [0,3,6]
+
+    const s1 = ctrl.getState();
+    expect(s1.animation).not.toBeNull();
+    const originalPath = [...s1.animation!.path];
+
+    // Mutate the returned snapshot's path
+    s1.animation!.path.push(999);
+
+    // A fresh getState() must still return the unmodified path
+    const s2 = ctrl.getState();
+    expect(s2.animation!.path).toEqual(originalPath);
+  });
+
+  it("mutating a node's files array returned by getState() does not affect internal state", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5);
+    ctrl.startInsertFile("leak-test", 0);
+    ctrl.finishAnimation();
+
+    const s1 = ctrl.getState();
+    // Find the node with the file and push a fake entry
+    const nodeWithFile = s1.nodes.find((n) => n.files.length > 0)!;
+    expect(nodeWithFile).toBeDefined();
+    nodeWithFile.files.push({ key: 9999, value: "injected" });
+
+    // Internal state must be clean
+    const s2 = ctrl.getState();
+    const sameNode = s2.nodes.find((n) => n.id === nodeWithFile.id)!;
+    expect(sameNode.files.some((f) => f.key === 9999)).toBe(false);
+  });
+
+  it("mutating a node's fingers array returned by getState() does not affect internal state", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5);
+
+    const s1 = ctrl.getState();
+    const originalFingerCount = s1.nodes[0]!.fingers.length;
+    // Mutate the returned snapshot
+    s1.nodes[0]!.fingers.splice(0, s1.nodes[0]!.fingers.length);
+
+    // Fresh getState() must reflect the real finger table
+    const s2 = ctrl.getState();
+    expect(s2.nodes[0]!.fingers.length).toBe(originalFingerCount);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 2 — two subscribers each receive independent snapshots
+// ---------------------------------------------------------------------------
+
+describe("_notify() — per-listener independent snapshots", () => {
+  it("mutation of snapshot in listener A does not corrupt snapshot seen by B", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5);
+    ctrl.startRoute(5, 0); // path [0,3,6]
+
+    const pathsSeenByB: number[][] = [];
+
+    // Listener A mutates the path it receives
+    ctrl.subscribe((s) => {
+      if (s.animation) s.animation.path.push(999);
+    });
+    // Listener B records what it sees
+    ctrl.subscribe((s) => {
+      if (s.animation) pathsSeenByB.push([...s.animation.path]);
+    });
+
+    ctrl.stepAnimation();
+
+    // B should never see the 999 injected by A
+    for (const p of pathsSeenByB) {
+      expect(p).not.toContain(999);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 4 — starting a new animation while one is in-flight commits the first
+// ---------------------------------------------------------------------------
+
+describe("startInsertFile() — no silent drop on interrupt", () => {
+  it("starting a second insert while first is in-flight commits the first", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5); // ids 0,3,6,9,12
+
+    const key1 = hash("file-one", 4);
+    ctrl.startInsertFile("file-one", 0);
+
+    // Confirm animation is in-flight (not yet done for a multi-hop route)
+    const anim1 = ctrl.getState().animation!;
+
+    // If single-hop it already committed — skip the test body
+    if (!anim1.done) {
+      const dest1 = anim1.destination;
+
+      // Start a second insert WITHOUT finishing the first
+      ctrl.startInsertFile("file-two", 0);
+
+      // The first file must now be present at its destination
+      const state = ctrl.getState();
+      const destNode = state.nodes.find((n) => n.id === dest1)!;
+      expect(destNode.files.some((f) => f.key === key1 && f.value === "file-one")).toBe(true);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix 5 — removeNode of an intermediate hop cancels the animation
+// ---------------------------------------------------------------------------
+
+describe("removeNode() — intermediate-hop cancels animation", () => {
+  it("removing a node that is an intermediate hop clears the animation", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5); // ids 0,3,6,9,12
+    ctrl.startRoute(5, 0); // path [0,3,6] — node 3 is an intermediate hop
+
+    const animBefore = ctrl.getState().animation!;
+    // Verify node 3 is indeed an intermediate hop (not start/dest)
+    expect(animBefore.path).toContain(3);
+    expect(animBefore.startId).not.toBe(3);
+    expect(animBefore.destination).not.toBe(3);
+
+    ctrl.removeNode(3);
+
+    expect(ctrl.getState().animation).toBeNull();
+  });
+
+  it("removing a node NOT in the animation path does not cancel the animation", () => {
+    const ctrl = new DHTController(4);
+    ctrl.reset(4, 5); // ids 0,3,6,9,12
+    ctrl.startRoute(5, 0); // path [0,3,6] — node 9 and 12 are NOT in path
+
+    ctrl.removeNode(9);
+
+    expect(ctrl.getState().animation).not.toBeNull();
+  });
+});

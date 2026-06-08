@@ -223,6 +223,31 @@ export class ChordRing {
   }
 
   // -------------------------------------------------------------------------
+  // insertAt(nodeId, key, value) — insert directly into a specific node's
+  // B-tree without any routing.  Used to commit a pre-routed insert animation
+  // to the destination that was computed at animation start time.
+  // Returns false if the node id is not present in the ring.
+  // -------------------------------------------------------------------------
+  insertAt(nodeId: number, key: number, value: string): boolean {
+    const store = this._stores.get(nodeId);
+    if (!store) return false;
+    store.insert(key, value);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
+  // removeAt(nodeId, key) — remove directly from a specific node's B-tree
+  // without any routing.  Used to commit a pre-routed delete animation.
+  // Returns false if the node id is not present in the ring.
+  // -------------------------------------------------------------------------
+  removeAt(nodeId: number, key: number): boolean {
+    const store = this._stores.get(nodeId);
+    if (!store) return false;
+    store.remove(key);
+    return true;
+  }
+
+  // -------------------------------------------------------------------------
   // insertFile(name, startId)
   // key = hash(name, bits) (already mod 2^bits)
   // Route key from startId, insert (key, name) into destination's B-tree.
