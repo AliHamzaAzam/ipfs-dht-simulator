@@ -7,7 +7,12 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run"
   },
+  "dependencies": {
+    "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/oswald": "^5.2.8"
+  },
   "devDependencies": {
+    "jsdom": "^24.1.0",
     "typescript": "^5.4.5",
     "vite": "^5.4.0",
     "vitest": "^1.6.0"
