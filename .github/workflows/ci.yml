@@ -1,0 +1,46 @@
+# CI guard for the IPFS DHT Chord-ring visualizer.
+#
+# The visualizer (web/) is a faithful TypeScript reimplementation of the C++
+# Chord/B-tree logic — no compilation step, no toolchain. Deployment is handled
+# by Cloudflare Pages' Git integration (connect the repo in the Cloudflare
+# dashboard: root web/, build `npm run build`, output dist), so there are NO
+# secrets here. This workflow just guards quality: it verifies the engine tests
+# (cross-checked against the C++ reference) and the production build pass.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Test
+        working-directory: web
+        run: npm test
+      - name: Production build
+        working-directory: web
+        run: npm run build
