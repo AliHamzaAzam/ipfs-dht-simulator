@@ -12,7 +12,7 @@
 
 import { DHTController, DHTState, RouteAnimation } from "../controller.js";
 import { RingGeometry, idToPoint, fractionToPoint } from "../layout.js";
-import { svgEl, setAttrs, clearChildren } from "./svg-utils.js";
+import { svgEl, clearChildren } from "./svg-utils.js";
 
 // ---------------------------------------------------------------------------
 // Visual constants
@@ -193,12 +193,14 @@ export class RingView {
     for (const node of state.nodes) {
       const src = idToPoint(node.id, this._geo);
       for (const finger of node.fingers) {
-        // Skip the finger that is the immediate successor — that's drawn as
-        // the successor arc.
-        if (finger.targetId === this._ringNext(state, node.id)) continue;
-
         const isHighlighted =
           node.id === highlightSrc && finger.targetId === highlightTarget;
+
+        // Skip the finger that is the immediate successor — that's drawn as
+        // the successor arc — unless this is the highlighted hop, otherwise a
+        // route that forwards via the successor finger would show no highlight.
+        if (finger.targetId === this._ringNext(state, node.id) && !isHighlighted)
+          continue;
 
         const dst = idToPoint(finger.targetId, this._geo);
         const line = svgEl("line", {
@@ -296,7 +298,9 @@ export class RingView {
       const toId = anim.path[i + 1];
       if (fromId === undefined || toId === undefined) break;
 
-      const isCurrent = i === anim.step - 1;
+      // At step 0 the first hop is the one being drawn; afterwards the current
+      // hop is the most recently completed one (step - 1).
+      const isCurrent = anim.step === 0 ? i === 0 : i === anim.step - 1;
       const from = idToPoint(fromId, this._geo);
       const to = idToPoint(toId, this._geo);
 
