@@ -31,10 +31,10 @@ export class AnimationBar {
     this._controller = controller;
     this._view = view;
 
-    this._stepBtn = el("button", { className: "btn btn--screen", text: "▶ Step" }) as HTMLButtonElement;
-    this._playBtn = el("button", { className: "btn btn--screen", text: "▶▶ Play" }) as HTMLButtonElement;
-    this._pauseBtn = el("button", { className: "btn btn--screen", text: "❚❚ Pause" }) as HTMLButtonElement;
-    this._finishBtn = el("button", { className: "btn btn--screen", text: "⏭ Finish" }) as HTMLButtonElement;
+    this._stepBtn = el("button", { className: "btn", text: "▶ Step" }) as HTMLButtonElement;
+    this._playBtn = el("button", { className: "btn", text: "▶▶ Play" }) as HTMLButtonElement;
+    this._pauseBtn = el("button", { className: "btn", text: "❚❚ Pause" }) as HTMLButtonElement;
+    this._finishBtn = el("button", { className: "btn", text: "⏭ Finish" }) as HTMLButtonElement;
 
     this._stepBtn.addEventListener("click", () => this._view.step());
     this._playBtn.addEventListener("click", () => this._view.play());
